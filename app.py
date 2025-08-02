@@ -1,357 +1,157 @@
 import streamlit as st
 import requests
 from datetime import datetime
-import time
+import json
 
 # Configuration
 N8N_WEBHOOK_URL = "https://agentonline-u29564.vm.elestio.app/webhook/f4927f0d-167b-4ab0-94d2-87d4c373f9e9"
-REQUEST_TIMEOUT = 30  # Increased timeout for better reliability
 
 # Page configuration
 st.set_page_config(
-    page_title="n8n ChatBot", 
-    layout="centered",
-    initial_sidebar_state="collapsed"
+    page_title="Simple n8n ChatBot", 
+    layout="centered"
 )
 
-# Custom CSS for better styling
+# Simple CSS
 st.markdown("""
-    <style>
-    .main-header {
-        text-align: center;
-        padding: 1rem 0;
-        border-bottom: 2px solid #f0f0f0;
-        margin-bottom: 2rem;
-    }
-    
-    .chat-container {
-        max-height: 600px;
-        overflow-y: auto;
-        padding: 1rem;
-        border: 2px solid #e0e0e0;
-        border-radius: 20px;
-        background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-        margin-bottom: 1rem;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-    }
-    
-    .chat-bubble {
-        padding: 12px 18px;
-        border-radius: 18px;
-        margin-bottom: 12px;
-        max-width: 85%;
-        line-height: 1.6;
-        font-size: 15px;
-        word-wrap: break-word;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-        animation: fadeIn 0.3s ease-in;
-    }
-    
-    @keyframes fadeIn {
-        from { opacity: 0; transform: translateY(10px); }
-        to { opacity: 1; transform: translateY(0); }
-    }
-    
-    .user-msg {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        margin-left: auto;
-        text-align: right;
-        border-bottom-right-radius: 5px;
-    }
-    
-    .bot-msg {
-        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-        color: white;
-        margin-right: auto;
-        text-align: left;
-        border-bottom-left-radius: 5px;
-    }
-    
-    .error-msg {
-        background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%);
-        color: #721c24;
-        margin-right: auto;
-        text-align: left;
-        border-left: 4px solid #dc3545;
-    }
-    
-    .timestamp {
-        font-size: 11px;
-        opacity: 0.8;
-        margin-top: 4px;
-    }
-    
-    .input-container {
-        background: white;
-        padding: 1rem;
-        border-radius: 15px;
-        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-        margin-top: 1rem;
-    }
-    
-    .status-indicator {
-        padding: 8px 16px;
-        border-radius: 20px;
-        font-size: 12px;
-        font-weight: bold;
-        margin-bottom: 1rem;
-        text-align: center;
-    }
-    
-    .status-online {
-        background-color: #d4edda;
-        color: #155724;
-        border: 1px solid #c3e6cb;
-    }
-    
-    .status-loading {
-        background-color: #fff3cd;
-        color: #856404;
-        border: 1px solid #ffeaa7;
-    }
-    
-    .status-error {
-        background-color: #f8d7da;
-        color: #721c24;
-        border: 1px solid #f5c6cb;
-    }
-    </style>
+<style>
+.chat-message {
+    padding: 10px;
+    margin: 10px 0;
+    border-radius: 10px;
+}
+.user-message {
+    background-color: #007bff;
+    color: white;
+    text-align: right;
+}
+.bot-message {
+    background-color: #f8f9fa;
+    color: black;
+    border: 1px solid #dee2e6;
+}
+.error-message {
+    background-color: #f8d7da;
+    color: #721c24;
+    border: 1px solid #f5c6cb;
+}
+</style>
 """, unsafe_allow_html=True)
 
-# Header
-st.markdown('<div class="main-header">', unsafe_allow_html=True)
-st.title("🤖 AI Chat Assistant")
-st.caption("Powered by n8n Webhook + LLM")
-st.markdown('</div>', unsafe_allow_html=True)
+# Title
+st.title("🤖 Simple n8n Chatbot")
 
 # Initialize session state
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []
+if "messages" not in st.session_state:
+    st.session_state.messages = []
 
-if "is_loading" not in st.session_state:
-    st.session_state.is_loading = False
-
-if "connection_status" not in st.session_state:
-    st.session_state.connection_status = "online"
-
-def validate_input(text):
-    """Validate user input"""
-    if not text or not text.strip():
-        return False, "Please enter a message"
-    
-    if len(text.strip()) > 1000:
-        return False, "Message too long (max 1000 characters)"
-    
-    return True, ""
-
-def ask_n8n_agent(prompt):
-    """Enhanced function to call n8n webhook with better error handling"""
+def send_to_n8n(message):
+    """Simple function to send message to n8n and get response"""
     try:
-        st.session_state.connection_status = "loading"
+        # Simple payload - just send the message
+        payload = {"message": message}
         
-        # Prepare the request
-        headers = {
-            'Content-Type': 'application/json',
-            'User-Agent': 'Streamlit-ChatBot/1.0'
-        }
-        
-        payload = {
-            "message": prompt.strip(),
-            "timestamp": datetime.now().isoformat(),
-            "session_id": st.session_state.get("session_id", "default")
-        }
-        
-        # Make the request
+        # Make request with simple timeout
         response = requests.post(
-            N8N_WEBHOOK_URL, 
-            json=payload, 
-            headers=headers,
-            timeout=REQUEST_TIMEOUT
+            N8N_WEBHOOK_URL,
+            json=payload,
+            timeout=30
         )
         
-        # Check response status
-        response.raise_for_status()
-        
-        # Parse response
-        try:
-            json_response = response.json()
-            if isinstance(json_response, dict):
-                # Try different possible response keys
-                for key in ['response', 'message', 'reply', 'answer', 'text']:
-                    if key in json_response:
-                        st.session_state.connection_status = "online"
-                        return json_response[key]
-                
-                # If no standard key found, return the whole response
-                st.session_state.connection_status = "online"
-                return str(json_response)
-            else:
-                st.session_state.connection_status = "online"
-                return str(json_response)
-                
-        except ValueError:
-            # Not JSON, return as text
-            response_text = response.text.strip()
-            if response_text:
-                st.session_state.connection_status = "online"
-                return response_text
-            else:
-                st.session_state.connection_status = "error"
-                return "⚠️ Received empty response from server"
-                
-    except requests.exceptions.Timeout:
-        st.session_state.connection_status = "error"
-        return "⏱️ Request timed out. The server might be busy. Please try again."
-        
-    except requests.exceptions.ConnectionError:
-        st.session_state.connection_status = "error"
-        return "🔌 Connection failed. Please check your internet connection and try again."
-        
-    except requests.exceptions.HTTPError as e:
-        st.session_state.connection_status = "error"
-        if e.response.status_code == 404:
-            return "🔍 Webhook endpoint not found. Please check the URL configuration."
-        elif e.response.status_code == 500:
-            return "🔧 Server error. The n8n workflow might have an issue."
+        # Check if request was successful
+        if response.status_code == 200:
+            # Try to get response as JSON first
+            try:
+                result = response.json()
+                # Handle different response formats
+                if isinstance(result, dict):
+                    # Try common response keys
+                    for key in ['response', 'message', 'reply', 'answer', 'output']:
+                        if key in result:
+                            return result[key]
+                    # If no standard key, return first non-empty value
+                    for value in result.values():
+                        if value and isinstance(value, str):
+                            return value
+                    return str(result)
+                else:
+                    return str(result)
+            except:
+                # If not JSON, return as text
+                return response.text if response.text else "Empty response"
         else:
-            return f"📡 HTTP Error {e.response.status_code}: {e.response.reason}"
+            return f"Error: Server returned status {response.status_code}"
             
+    except requests.exceptions.Timeout:
+        return "Error: Request timed out"
+    except requests.exceptions.ConnectionError:
+        return "Error: Could not connect to server"
     except Exception as e:
-        st.session_state.connection_status = "error"
-        return f"❌ Unexpected error: {str(e)}"
+        return f"Error: {str(e)}"
 
-def display_status():
-    """Display connection status"""
-    if st.session_state.connection_status == "online":
-        st.markdown('<div class="status-indicator status-online">🟢 Connected</div>', unsafe_allow_html=True)
-    elif st.session_state.connection_status == "loading":
-        st.markdown('<div class="status-indicator status-loading">🟡 Processing...</div>', unsafe_allow_html=True)
-    else:
-        st.markdown('<div class="status-indicator status-error">🔴 Connection Issues</div>', unsafe_allow_html=True)
+# Chat input
+user_input = st.text_input("Type your message:", key="user_input")
 
-def add_message(sender, message, timestamp, is_error=False):
-    """Add a message to chat history"""
-    st.session_state.chat_history.append({
-        "sender": sender,
-        "message": message,
-        "timestamp": timestamp,
-        "is_error": is_error
-    })
-
-# Display status
-display_status()
-
-# Chat input form
-st.markdown('<div class="input-container">', unsafe_allow_html=True)
-
-with st.form("chat_input", clear_on_submit=True):
-    col1, col2 = st.columns([4, 1])
-    
-    with col1:
-        user_input = st.text_input(
-            "💬 Your message:",
-            placeholder="Type your message here...",
-            disabled=st.session_state.is_loading,
-            label_visibility="collapsed"
-        )
-    
-    with col2:
-        submitted = st.form_submit_button(
-            "Send",
-            disabled=st.session_state.is_loading or not user_input,
-            use_container_width=True
-        )
-
-st.markdown('</div>', unsafe_allow_html=True)
-
-# Process form submission
-if submitted and user_input:
-    # Validate input
-    is_valid, error_msg = validate_input(user_input)
-    
-    if not is_valid:
-        st.error(error_msg)
-    else:
-        # Set loading state
-        st.session_state.is_loading = True
-        
+# Send button
+if st.button("Send") or (user_input and st.session_state.get("enter_pressed", False)):
+    if user_input.strip():
         # Add user message
-        timestamp = datetime.now().strftime("%H:%M:%S")
-        add_message("🧑 You", user_input, timestamp)
+        st.session_state.messages.append({
+            "type": "user",
+            "content": user_input,
+            "time": datetime.now().strftime("%H:%M:%S")
+        })
         
-        # Get AI response
-        with st.spinner("AI is thinking..."):
-            reply = ask_n8n_agent(user_input)
+        # Show loading
+        with st.spinner("Getting response..."):
+            # Get bot response
+            bot_response = send_to_n8n(user_input)
         
-        # Add AI response
-        ai_timestamp = datetime.now().strftime("%H:%M:%S")
-        is_error = reply.startswith(("❌", "⚠️", "🔌", "⏱️", "🔍", "🔧", "📡"))
-        add_message("🤖 AI Assistant", reply, ai_timestamp, is_error)
+        # Add bot response
+        st.session_state.messages.append({
+            "type": "bot",
+            "content": bot_response,
+            "time": datetime.now().strftime("%H:%M:%S")
+        })
         
-        # Reset loading state
-        st.session_state.is_loading = False
-        
-        # Rerun to update the display
+        # Clear input
+        st.session_state.user_input = ""
         st.rerun()
 
-# Display chat history
-if st.session_state.chat_history:
-    st.markdown('<div class="chat-container">', unsafe_allow_html=True)
+# Display messages
+if st.session_state.messages:
+    st.subheader("Chat History")
     
-    for msg in st.session_state.chat_history:
-        sender = msg["sender"]
-        message = msg["message"]
-        timestamp = msg["timestamp"]
-        is_error = msg.get("is_error", False)
-        
-        if "You" in sender:
-            css_class = "chat-bubble user-msg"
-        elif is_error:
-            css_class = "chat-bubble error-msg"
-        else:
-            css_class = "chat-bubble bot-msg"
-        
-        # Escape HTML in message content
-        escaped_message = message.replace("<", "&lt;").replace(">", "&gt;")
-        
-        st.markdown(f"""
-            <div class="{css_class}">
-                <div><strong>{sender}</strong></div>
-                <div>{escaped_message}</div>
-                <div class="timestamp">{timestamp}</div>
+    for msg in st.session_state.messages:
+        if msg["type"] == "user":
+            st.markdown(f"""
+            <div class="chat-message user-message">
+                <strong>You ({msg['time']}):</strong><br>
+                {msg['content']}
             </div>
-        """, unsafe_allow_html=True)
+            """, unsafe_allow_html=True)
+        else:
+            # Check if it's an error message
+            css_class = "error-message" if msg['content'].startswith("Error:") else "bot-message"
+            st.markdown(f"""
+            <div class="chat-message {css_class}">
+                <strong>Bot ({msg['time']}):</strong><br>
+                {msg['content']}
+            </div>
+            """, unsafe_allow_html=True)
+
+# Clear chat button
+if st.button("Clear Chat"):
+    st.session_state.messages = []
+    st.rerun()
+
+# Debug section (optional - can be removed)
+with st.expander("Debug Info"):
+    st.write("Webhook URL:", N8N_WEBHOOK_URL)
+    st.write("Total messages:", len(st.session_state.messages))
     
-    st.markdown('</div>', unsafe_allow_html=True)
-else:
-    st.info("👋 Welcome! Start a conversation by typing a message above.")
-
-# Control buttons
-col1, col2, col3 = st.columns([1, 1, 1])
-
-with col1:
-    if st.button("🗑️ Clear Chat", use_container_width=True):
-        st.session_state.chat_history = []
-        st.session_state.connection_status = "online"
-        st.rerun()
-
-with col2:
-    if st.button("🔄 Refresh", use_container_width=True):
-        st.rerun()
-
-with col3:
-    if st.button("📊 Stats", use_container_width=True):
-        total_messages = len(st.session_state.chat_history)
-        user_messages = len([msg for msg in st.session_state.chat_history if "You" in msg["sender"]])
-        st.info(f"Total messages: {total_messages} | Your messages: {user_messages}")
-
-# Footer
-st.markdown("---")
-st.markdown(
-    "<div style='text-align: center; color: #666; font-size: 12px;'>"
-    "💡 Tip: Keep your messages clear and concise for better responses"
-    "</div>", 
-    unsafe_allow_html=True
-)
-
+    # Test connection button
+    if st.button("Test Connection"):
+        with st.spinner("Testing..."):
+            test_response = send_to_n8n("test")
+        st.write("Test response:", test_response)
