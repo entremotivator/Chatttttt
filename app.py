@@ -1,6 +1,14 @@
 import streamlit as st
 import requests
 from datetime import datetime
+import re
+
+# ----------------------------
+# Utility: Strip HTML tags
+# ----------------------------
+def strip_html_tags(text):
+    clean = re.compile('<.*?>')
+    return re.sub(clean, '', text)
 
 # ----------------------------
 # Default Session State Setup
@@ -29,7 +37,7 @@ DEFAULT_N8N_WEBHOOK = "https://agentonline-u29564.vm.elestio.app/webhook/f4927f0
 N8N_WEBHOOK_URL = st.sidebar.text_input("Enter N8N Webhook URL:", value=DEFAULT_N8N_WEBHOOK)
 
 # ----------------------------
-# Main Interface: Super Chat
+# Main Interface
 # ----------------------------
 st.set_page_config(page_title="Lil J’s AI Auto Laundry Chat", layout="centered")
 st.title("💬 Lil J’s Ai Auto Laundry Super Chat")
@@ -50,7 +58,7 @@ for message in st.session_state.messages:
 
 # Chat Input
 if prompt := st.chat_input("Type your message here..."):
-    # Append user message
+    # Store user message
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
@@ -77,9 +85,10 @@ if prompt := st.chat_input("Type your message here..."):
                 if response.status_code == 200:
                     try:
                         response_data = response.json()
-                        bot_response = response_data.get("response") or response_data.get("message", "🧠 I'm processing your request...")
+                        bot_response = response_data.get("response") or response_data.get("message") or "🧠 I'm processing your request..."
                     except:
-                        bot_response = response.text or "🧠 I'm processing your request..."
+                        # Fallback: treat as raw text and strip HTML
+                        bot_response = strip_html_tags(response.text) or "🧠 I'm processing your request..."
                 else:
                     bot_response = "❌ Could not reach the AI service. Please try again later."
 
@@ -88,7 +97,7 @@ if prompt := st.chat_input("Type your message here..."):
     else:
         bot_response = "⚙️ Webhook URL not set. Please enter it in the sidebar."
 
-    # Display Bot Message
+    # Display Bot Response (always plain text)
     st.session_state.messages.append({"role": "assistant", "content": bot_response})
     with st.chat_message("assistant"):
         st.markdown(bot_response)
