@@ -37,72 +37,35 @@ class GoogleDriveManager:
         self.service = None
         self.folder_id = None
     
-    def authenticate(self, credentials_json: str) -> bool:
-        """Authenticate with Google Drive using uploaded credentials"""
+    def authenticate_service_account(self, service_account_json: str) -> bool:
+        """Authenticate with Google Drive using service account"""
         try:
-            credentials_info = json.loads(credentials_json)
+            credentials_info = json.loads(service_account_json)
             
-            # Check if the credentials have the correct format (web or installed)
-            if "web" not in credentials_info and "installed" not in credentials_info:
-                st.error("❌ Invalid credentials format. Please ensure you download OAuth 2.0 Client credentials (not Service Account)")
-                st.error("The JSON should contain either 'web' or 'installed' configuration")
+            # Validate service account format
+            required_keys = ['type', 'project_id', 'private_key_id', 'private_key', 'client_email']
+            if not all(key in credentials_info for key in required_keys):
+                st.error("❌ Invalid service account format")
                 return False
             
-            # Create flow for OAuth2 - let the library handle web vs installed automatically
-            flow = Flow.from_client_config(
-                credentials_info,
-                scopes=SCOPES,
-                redirect_uri='urn:ietf:wg:oauth:2.0:oob'
-            )
-            
-            # Store flow in session state for later use
-            st.session_state.oauth_flow = flow
-            
-            # Get authorization URL
-            auth_url, _ = flow.authorization_url(
-                prompt='consent',
-                access_type='offline'
-            )
-            return auth_url
-            
-        except json.JSONDecodeError:
-            st.error("❌ Invalid JSON format in credentials file")
-            return False
-        except ValueError as e:
-            if "client secrets" in str(e).lower():
-                st.error("❌ Invalid client secrets format. Please use OAuth 2.0 Client ID credentials, not Service Account")
-                st.error("Make sure to select 'Desktop Application' when creating OAuth credentials")
-            else:
-                st.error(f"❌ Configuration error: {str(e)}")
-            return False
-        except Exception as e:
-            st.error(f"❌ Authentication error: {str(e)}")
-            return False
-    
-    def complete_authentication(self, auth_code: str) -> bool:
-        """Complete OAuth flow with authorization code"""
-        try:
-            flow = st.session_state.get('oauth_flow')
-            if not flow:
-                st.error("❌ OAuth flow not found. Please start authentication again.")
+            if credentials_info.get('type') != 'service_account':
+                st.error("❌ File is not a service account credential")
                 return False
             
-            # Exchange authorization code for credentials
-            flow.fetch_token(code=auth_code)
-            credentials = flow.credentials
+            # Create credentials from service account info
+            from google.oauth2 import service_account
+            credentials = service_account.Credentials.from_service_account_info(
+                credentials_info, scopes=SCOPES
+            )
             
             # Build Drive service
             self.service = build('drive', 'v3', credentials=credentials)
             
+            # Test the connection
+            self.service.about().get(fields="user").execute()
+            
             # Store credentials in session state
-            st.session_state.drive_credentials = {
-                'token': credentials.token,
-                'refresh_token': credentials.refresh_token,
-                'token_uri': credentials.token_uri,
-                'client_id': credentials.client_id,
-                'client_secret': credentials.client_secret,
-                'scopes': credentials.scopes
-            }
+            st.session_state.drive_credentials = credentials_info
             
             # Create or find folder
             self.folder_id = self._get_or_create_folder()
@@ -113,26 +76,24 @@ class GoogleDriveManager:
             
             return True
             
+        except json.JSONDecodeError:
+            st.error("❌ Invalid JSON format")
+            return False
         except Exception as e:
-            st.error(f"❌ Authentication completion error: {str(e)}")
+            st.error(f"❌ Authentication error: {str(e)}")
             return False
     
     def initialize_from_session(self) -> bool:
         """Initialize Drive service from stored session credentials"""
         try:
-            creds_dict = st.session_state.get('drive_credentials')
-            if not creds_dict:
+            credentials_info = st.session_state.get('drive_credentials')
+            if not credentials_info:
                 return False
             
-            credentials = Credentials(**creds_dict)
-            
-            # Refresh token if expired
-            if credentials.expired and credentials.refresh_token:
-                credentials.refresh(Request())
-                # Update session state with new token
-                st.session_state.drive_credentials.update({
-                    'token': credentials.token
-                })
+            from google.oauth2 import service_account
+            credentials = service_account.Credentials.from_service_account_info(
+                credentials_info, scopes=SCOPES
+            )
             
             self.service = build('drive', 'v3', credentials=credentials)
             self.folder_id = st.session_state.get('drive_folder_id')
@@ -405,9 +366,6 @@ def initialize_session_state():
     
     if "drive_auto_sync" not in st.session_state:
         st.session_state.drive_auto_sync = True
-    
-    if "auth_step" not in st.session_state:
-        st.session_state.auth_step = "upload_credentials"
 
 # ----------------------------
 # Chat Session Management (Previous functions remain mostly the same)
@@ -516,7 +474,7 @@ def send_message_to_ai(prompt: str, webhook_url: str) -> str:
 # ----------------------------
 def render_google_drive_section():
     """Render Google Drive integration section in sidebar"""
-    st.sidebar.subheader("☁️ Google Drive Sync")
+    st.sidebar.subheader("🔐 Authentication")
     
     drive_manager = get_drive_manager()
     
@@ -572,76 +530,30 @@ def render_google_drive_section():
             st.rerun()
     
     else:
-        # Authentication flow
-        if st.session_state.auth_step == "upload_credentials":
-            st.sidebar.info("📋 Upload Google Drive credentials JSON file")
-            
-            with st.sidebar.expander("🔧 Setup Instructions", expanded=False):
-                st.markdown("""
-                **To get Google Drive credentials:**
-                
-                1. Go to [Google Cloud Console](https://console.cloud.google.com/)
-                2. Create a new project or select existing
-                3. Enable **Google Drive API**
-                4. Go to **Credentials** → **Create Credentials** → **OAuth 2.0 Client ID**
-                5. Choose **Desktop Application** (important!)
-                6. Download the JSON file and upload it here
-                
-                ⚠️ **Important Notes:**
-                - Must use **OAuth 2.0 Client ID** (NOT Service Account)
-                - Choose **Desktop Application** type
-                - The JSON should contain "installed" configuration
-                """)
-            
-            uploaded_file = st.sidebar.file_uploader(
-                "Choose OAuth 2.0 credentials file",
-                type=['json'],
-                help="Upload the OAuth 2.0 Client ID credentials (not Service Account)"
-            )
-            
-            if uploaded_file is not None:
-                try:
-                    credentials_content = uploaded_file.read().decode()
-                    auth_url = drive_manager.authenticate(credentials_content)
-                    
-                    if auth_url:
-                        st.session_state.auth_url = auth_url
-                        st.session_state.auth_step = "get_code"
-                        st.rerun()
-                except Exception as e:
-                    st.sidebar.error(f"❌ Invalid credentials file: {str(e)}")
+        # Simple service account upload
+        st.sidebar.info("Upload service_account.json")
         
-        elif st.session_state.auth_step == "get_code":
-            st.sidebar.info("🔐 Complete Google Drive authorization")
-            
-            if st.sidebar.button("🌐 Open Authorization URL"):
-                st.sidebar.markdown(f"[📱 Click here to authorize]({st.session_state.auth_url})")
-            
-            st.sidebar.markdown("**Instructions:**")
-            st.sidebar.markdown("1. Click the authorization URL above")
-            st.sidebar.markdown("2. Sign in and allow permissions")
-            st.sidebar.markdown("3. Copy the authorization code")
-            st.sidebar.markdown("4. Paste it below")
-            
-            auth_code = st.sidebar.text_input(
-                "Enter authorization code:",
-                placeholder="Paste the code from Google here"
-            )
-            
-            if st.sidebar.button("✅ Complete Setup") and auth_code:
-                with st.sidebar.spinner("🔄 Completing authentication..."):
-                    if drive_manager.complete_authentication(auth_code):
+        uploaded_file = st.sidebar.file_uploader(
+            "Drag and drop file here",
+            type=['json'],
+            help="Limit 200MB per file • JSON For google drive"
+        )
+        
+        if uploaded_file is not None:
+            try:
+                service_account_content = uploaded_file.read().decode()
+                
+                with st.sidebar.spinner("🔄 Authenticating..."):
+                    if drive_manager.authenticate_service_account(service_account_content):
                         st.session_state.drive_enabled = True
-                        st.session_state.auth_step = "upload_credentials"
                         st.sidebar.success("✅ Google Drive connected successfully!")
                         time.sleep(1)
                         st.rerun()
                     else:
-                        st.sidebar.error("❌ Authentication failed. Please try again.")
-            
-            if st.sidebar.button("🔙 Back"):
-                st.session_state.auth_step = "upload_credentials"
-                st.rerun()
+                        st.sidebar.error("❌ Authentication failed")
+                        
+            except Exception as e:
+                st.sidebar.error(f"❌ Error reading file: {str(e)}")
 
 # ----------------------------
 # Enhanced UI Components
