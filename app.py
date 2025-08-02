@@ -111,10 +111,12 @@ class GoogleDriveManager:
     def _get_or_create_folder(self) -> str:
         """Get or create the chat sessions folder in Drive"""
         try:
-            # Search for existing folder
+            # Search for existing folder - properly escape the apostrophe in folder name
+            query = f"name = \"{DRIVE_FOLDER_NAME}\" and mimeType = 'application/vnd.google-apps.folder'"
             results = self.service.files().list(
-                q=f"name='{DRIVE_FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder'",
-                spaces='drive'
+                q=query,
+                spaces='drive',
+                fields='files(id, name)'
             ).execute()
             
             folders = results.get('files', [])
@@ -128,7 +130,7 @@ class GoogleDriveManager:
                 'mimeType': 'application/vnd.google-apps.folder'
             }
             
-            folder = self.service.files().create(body=folder_metadata).execute()
+            folder = self.service.files().create(body=folder_metadata, fields='id').execute()
             return folder.get('id')
             
         except Exception as e:
@@ -159,10 +161,12 @@ class GoogleDriveManager:
                 mimetype='application/json'
             )
             
-            # Check if file already exists and update it
+            # Check if file already exists and update it - properly escape filename
+            query = f"name = \"{filename}\" and parents in \"{self.folder_id}\""
             existing_files = self.service.files().list(
-                q=f"name='{filename}' and parents in '{self.folder_id}'",
-                spaces='drive'
+                q=query,
+                spaces='drive',
+                fields='files(id, name)'
             ).execute()
             
             if existing_files.get('files'):
@@ -170,13 +174,15 @@ class GoogleDriveManager:
                 file_id = existing_files['files'][0]['id']
                 self.service.files().update(
                     fileId=file_id,
-                    media_body=media
+                    media_body=media,
+                    fields='id'
                 ).execute()
             else:
                 # Create new file
                 self.service.files().create(
                     body=file_metadata,
-                    media_body=media
+                    media_body=media,
+                    fields='id'
                 ).execute()
             
             return True
@@ -191,9 +197,12 @@ class GoogleDriveManager:
             if not self.service or not self.folder_id:
                 return []
             
+            # Properly construct query with double quotes for folder ID and contains operator
+            query = f"parents in \"{self.folder_id}\" and name contains \"chat_sessions\""
             results = self.service.files().list(
-                q=f"parents in '{self.folder_id}' and name contains 'chat_sessions'",
+                q=query,
                 orderBy='modifiedTime desc',
+                spaces='drive',
                 fields="files(id, name, modifiedTime, size)"
             ).execute()
             
