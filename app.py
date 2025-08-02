@@ -2,6 +2,7 @@ import streamlit as st
 import requests
 from datetime import datetime
 import re
+import json
 
 # ----------------------------
 # Utility: Strip HTML tags
@@ -9,6 +10,35 @@ import re
 def strip_html_tags(text):
     clean = re.compile('<.*?>')
     return re.sub(clean, '', text)
+
+# ----------------------------
+# Utility: Extract plain text from AI response JSON structure
+# ----------------------------
+def extract_plain_text(response_text):
+    """
+    Attempt to extract the plain text message from AI response,
+    even if wrapped in JSON or nested dicts.
+    """
+    try:
+        data = json.loads(response_text)
+        # Handle if response is a list of dicts with nested messages
+        if isinstance(data, list):
+            for entry in data:
+                if isinstance(entry, dict) and "messages" in entry:
+                    # Try common keys inside messages dict
+                    msg_dict = entry["messages"]
+                    for key in ("ai", "assistant", "response", "message"):
+                        if key in msg_dict:
+                            return strip_html_tags(msg_dict[key])
+        elif isinstance(data, dict):
+            for key in ("response", "message", "text", "content"):
+                if key in data:
+                    return strip_html_tags(data[key])
+    except Exception:
+        # Not JSON, return original stripped text
+        return strip_html_tags(response_text)
+    # If none matched, fallback to stripped text
+    return strip_html_tags(response_text)
 
 # ----------------------------
 # Default Session State Setup
@@ -55,7 +85,7 @@ st.markdown(f"""
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         if message["role"] == "assistant":
-            # Display assistant message as plain text (no AI or JSON formatting)
+            # Display assistant message as plain text only
             st.text(message["content"])
         else:
             st.markdown(message["content"])
@@ -87,15 +117,7 @@ if prompt := st.chat_input("Type your message here..."):
                 )
 
                 if response.status_code == 200:
-                    try:
-                        response_data = response.json()
-                        # Only get raw string response, no AI markup or JSON objects
-                        bot_response = response_data.get("response") or response_data.get("message") or "🧠 Processing..."
-                        # Strip any HTML tags if present
-                        bot_response = strip_html_tags(bot_response)
-                    except Exception:
-                        # Fallback: treat as raw text and strip HTML
-                        bot_response = strip_html_tags(response.text) or "🧠 Processing..."
+                    bot_response = extract_plain_text(response.text) or "🧠 Processing..."
                 else:
                     bot_response = "❌ Could not reach the AI service. Please try again later."
 
