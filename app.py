@@ -54,7 +54,11 @@ st.markdown(f"""
 # Display Chat Messages
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
-        st.markdown(message["content"])
+        # Use st.text for assistant messages to prevent HTML rendering
+        if message["role"] == "assistant":
+            st.text(message["content"])
+        else:
+            st.markdown(message["content"])
 
 # Chat Input
 if prompt := st.chat_input("Type your message here..."):
@@ -97,7 +101,7 @@ if prompt := st.chat_input("Type your message here..."):
     else:
         bot_response = "⚙️ Webhook URL not set. Please enter it in the sidebar."
 
-    # Display Bot Response (always plain text)
+    # Display Bot Response as plain text
     st.session_state.messages.append({"role": "assistant", "content": bot_response})
     with st.chat_message("assistant"):
-        st.markdown(bot_response)
+        st.text(bot_response)
