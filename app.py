@@ -1,7 +1,6 @@
 import streamlit as st
 import requests
 from datetime import datetime
-import json
 
 # Configuration
 N8N_WEBHOOK_URL = "https://agentonline-u29564.vm.elestio.app/webhook/f4927f0d-167b-4ab0-94d2-87d4c373f9e9"
@@ -43,33 +42,24 @@ st.title("🤖 Simple n8n Chatbot")
 
 # Initialize session state
 if "messages" not in st.session_state:
-    st.session_state.messages = []
+    st.session_state["messages"] = []
+
+if "user_input" not in st.session_state:
+    st.session_state["user_input"] = ""
 
 def send_to_n8n(message):
     """Simple function to send message to n8n and get response"""
     try:
-        # Simple payload - just send the message
         payload = {"message": message}
+        response = requests.post(N8N_WEBHOOK_URL, json=payload, timeout=30)
         
-        # Make request with simple timeout
-        response = requests.post(
-            N8N_WEBHOOK_URL,
-            json=payload,
-            timeout=30
-        )
-        
-        # Check if request was successful
         if response.status_code == 200:
-            # Try to get response as JSON first
             try:
                 result = response.json()
-                # Handle different response formats
                 if isinstance(result, dict):
-                    # Try common response keys
                     for key in ['response', 'message', 'reply', 'answer', 'output']:
                         if key in result:
                             return result[key]
-                    # If no standard key, return first non-empty value
                     for value in result.values():
                         if value and isinstance(value, str):
                             return value
@@ -77,11 +67,10 @@ def send_to_n8n(message):
                 else:
                     return str(result)
             except:
-                # If not JSON, return as text
                 return response.text if response.text else "Empty response"
         else:
             return f"Error: Server returned status {response.status_code}"
-            
+
     except requests.exceptions.Timeout:
         return "Error: Request timed out"
     except requests.exceptions.ConnectionError:
@@ -89,39 +78,34 @@ def send_to_n8n(message):
     except Exception as e:
         return f"Error: {str(e)}"
 
-# Chat input
-user_input = st.text_input("Type your message:", key="user_input")
+# Chat input field
+user_input = st.text_input("Type your message:", value=st.session_state["user_input"], key="user_input")
 
 # Send button
-if st.button("Send") or (user_input and st.session_state.get("enter_pressed", False)):
+if st.button("Send"):
     if user_input.strip():
-        # Add user message
         st.session_state.messages.append({
             "type": "user",
             "content": user_input,
             "time": datetime.now().strftime("%H:%M:%S")
         })
-        
-        # Show loading
+
         with st.spinner("Getting response..."):
-            # Get bot response
             bot_response = send_to_n8n(user_input)
-        
-        # Add bot response
+
         st.session_state.messages.append({
             "type": "bot",
             "content": bot_response,
             "time": datetime.now().strftime("%H:%M:%S")
         })
-        
-        # Clear input
-        st.session_state.user_input = ""
+
+        st.session_state["user_input"] = ""  # Reset input after send
         st.rerun()
 
 # Display messages
 if st.session_state.messages:
     st.subheader("Chat History")
-    
+
     for msg in st.session_state.messages:
         if msg["type"] == "user":
             st.markdown(f"""
@@ -131,7 +115,6 @@ if st.session_state.messages:
             </div>
             """, unsafe_allow_html=True)
         else:
-            # Check if it's an error message
             css_class = "error-message" if msg['content'].startswith("Error:") else "bot-message"
             st.markdown(f"""
             <div class="chat-message {css_class}">
@@ -142,15 +125,15 @@ if st.session_state.messages:
 
 # Clear chat button
 if st.button("Clear Chat"):
-    st.session_state.messages = []
+    st.session_state["messages"] = []
+    st.session_state["user_input"] = ""
     st.rerun()
 
-# Debug section (optional - can be removed)
+# Debug section
 with st.expander("Debug Info"):
     st.write("Webhook URL:", N8N_WEBHOOK_URL)
     st.write("Total messages:", len(st.session_state.messages))
-    
-    # Test connection button
+
     if st.button("Test Connection"):
         with st.spinner("Testing..."):
             test_response = send_to_n8n("test")
