@@ -42,22 +42,50 @@ class GoogleDriveManager:
         try:
             credentials_info = json.loads(credentials_json)
             
+            # Check if credentials are for installed app (desktop application)
+            if 'installed' not in credentials_info and 'web' not in credentials_info:
+                st.error("❌ Invalid credentials format. Please use credentials for 'Desktop Application' or 'Web Application'")
+                return False
+            
+            # Handle both installed and web app credentials
+            if 'installed' in credentials_info:
+                client_config = credentials_info
+                redirect_uri = 'urn:ietf:wg:oauth:2.0:oob'  # For installed/desktop apps
+            elif 'web' in credentials_info:
+                client_config = credentials_info
+                # For web apps, use localhost redirect
+                redirect_uri = 'http://localhost:8080'
+            else:
+                st.error("❌ Unsupported credential type. Please use Desktop Application credentials.")
+                return False
+            
             # Create flow for OAuth2
             flow = Flow.from_client_config(
-                credentials_info,
+                client_config,
                 scopes=SCOPES,
-                redirect_uri='urn:ietf:wg:oauth:2.0:oob'  # For installed apps
+                redirect_uri=redirect_uri
             )
             
             # Store flow in session state for later use
             st.session_state.oauth_flow = flow
+            st.session_state.redirect_uri = redirect_uri
             
             # Get authorization URL
-            auth_url, _ = flow.authorization_url(prompt='consent')
+            auth_url, _ = flow.authorization_url(
+                prompt='consent',
+                access_type='offline',  # Get refresh token
+                include_granted_scopes='true'
+            )
             return auth_url
             
+        except json.JSONDecodeError:
+            st.error("❌ Invalid JSON format in credentials file")
+            return False
+        except KeyError as e:
+            st.error(f"❌ Missing required field in credentials: {str(e)}")
+            return False
         except Exception as e:
-            st.error(f"Authentication error: {str(e)}")
+            st.error(f"❌ Authentication error: {str(e)}")
             return False
     
     def complete_authentication(self, auth_code: str) -> bool:
@@ -65,8 +93,22 @@ class GoogleDriveManager:
         try:
             flow = st.session_state.get('oauth_flow')
             if not flow:
-                st.error("OAuth flow not found. Please start authentication again.")
+                st.error("❌ OAuth flow not found. Please start authentication again.")
                 return False
+            
+            # For web apps with localhost redirect, handle the full URL
+            redirect_uri = st.session_state.get('redirect_uri', 'urn:ietf:wg:oauth:2.0:oob')
+            
+            if redirect_uri == 'http://localhost:8080' and auth_code.startswith('http'):
+                # Extract code from full redirect URL for web apps
+                from urllib.parse import urlparse, parse_qs
+                parsed_url = urlparse(auth_code)
+                query_params = parse_qs(parsed_url.query)
+                if 'code' in query_params:
+                    auth_code = query_params['code'][0]
+                else:
+                    st.error("❌ Could not extract authorization code from URL")
+                    return False
             
             # Exchange authorization code for credentials
             flow.fetch_token(code=auth_code)
@@ -89,10 +131,13 @@ class GoogleDriveManager:
             self.folder_id = self._get_or_create_folder()
             st.session_state.drive_folder_id = self.folder_id
             
+            # Update last sync time
+            st.session_state.last_drive_sync = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            
             return True
             
         except Exception as e:
-            st.error(f"Authentication completion error: {str(e)}")
+            st.error(f"❌ Authentication completion error: {str(e)}")
             return False
     
     def initialize_from_session(self) -> bool:
@@ -554,6 +599,20 @@ def render_google_drive_section():
         if st.session_state.auth_step == "upload_credentials":
             st.sidebar.info("📋 Upload Google Drive credentials JSON file")
             
+            with st.sidebar.expander("🔧 Setup Instructions", expanded=False):
+                st.markdown("""
+                **To get Google Drive credentials:**
+                
+                1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+                2. Create a new project or select existing
+                3. Enable **Google Drive API**
+                4. Go to **Credentials** → **Create Credentials** → **OAuth 2.0 Client ID**
+                5. Choose **Desktop Application** (recommended) or **Web Application**
+                6. Download the JSON file and upload it here
+                
+                ⚠️ **Important:** Use "Desktop Application" type for best compatibility
+                """)
+            
             uploaded_file = st.sidebar.file_uploader(
                 "Choose credentials file",
                 type=['json'],
@@ -570,30 +629,50 @@ def render_google_drive_section():
                         st.session_state.auth_step = "get_code"
                         st.rerun()
                 except Exception as e:
-                    st.sidebar.error(f"Invalid credentials file: {str(e)}")
+                    st.sidebar.error(f"❌ Invalid credentials file: {str(e)}")
         
         elif st.session_state.auth_step == "get_code":
             st.sidebar.info("🔐 Complete Google Drive authorization")
             
+            redirect_uri = st.session_state.get('redirect_uri', 'urn:ietf:wg:oauth:2.0:oob')
+            
             if st.sidebar.button("🌐 Open Authorization URL"):
-                st.sidebar.markdown(f"[Click here to authorize]({st.session_state.auth_url})")
+                st.sidebar.markdown(f"[📱 Click here to authorize]({st.session_state.auth_url})")
             
-            st.sidebar.markdown(f"**Authorization URL:**")
-            st.sidebar.code(st.session_state.auth_url, language="text")
-            
-            auth_code = st.sidebar.text_input(
-                "Enter authorization code:",
-                placeholder="Paste the code from Google here"
-            )
+            # Show different instructions based on redirect type
+            if redirect_uri == 'urn:ietf:wg:oauth:2.0:oob':
+                st.sidebar.markdown("**Instructions:**")
+                st.sidebar.markdown("1. Click the authorization URL above")
+                st.sidebar.markdown("2. Sign in and allow permissions")
+                st.sidebar.markdown("3. Copy the authorization code")
+                st.sidebar.markdown("4. Paste it below")
+                
+                auth_code = st.sidebar.text_input(
+                    "Enter authorization code:",
+                    placeholder="Paste the code from Google here"
+                )
+            else:
+                st.sidebar.markdown("**Instructions:**")
+                st.sidebar.markdown("1. Click the authorization URL above")
+                st.sidebar.markdown("2. Sign in and allow permissions")
+                st.sidebar.markdown("3. Copy the entire redirect URL")
+                st.sidebar.markdown("4. Paste it below")
+                
+                auth_code = st.sidebar.text_input(
+                    "Enter redirect URL or code:",
+                    placeholder="Paste the full URL or just the code"
+                )
             
             if st.sidebar.button("✅ Complete Setup") and auth_code:
-                if drive_manager.complete_authentication(auth_code):
-                    st.session_state.drive_enabled = True
-                    st.session_state.auth_step = "upload_credentials"
-                    st.sidebar.success("✅ Google Drive connected!")
-                    st.rerun()
-                else:
-                    st.sidebar.error("❌ Authentication failed")
+                with st.sidebar.spinner("🔄 Completing authentication..."):
+                    if drive_manager.complete_authentication(auth_code):
+                        st.session_state.drive_enabled = True
+                        st.session_state.auth_step = "upload_credentials"
+                        st.sidebar.success("✅ Google Drive connected successfully!")
+                        time.sleep(1)  # Brief pause to show success message
+                        st.rerun()
+                    else:
+                        st.sidebar.error("❌ Authentication failed. Please try again.")
             
             if st.sidebar.button("🔙 Back"):
                 st.session_state.auth_step = "upload_credentials"
