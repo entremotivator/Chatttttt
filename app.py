@@ -233,7 +233,7 @@ def get_drive_manager():
     return GoogleDriveManager()
 
 # ----------------------------
-# Utility Functions (Previous functions remain the same)
+# Utility Functions
 # ----------------------------
 def strip_html_tags(text):
     """Remove HTML tags from text"""
@@ -368,7 +368,7 @@ def initialize_session_state():
         st.session_state.drive_auto_sync = True
 
 # ----------------------------
-# Chat Session Management (Previous functions remain mostly the same)
+# Chat Session Management
 # ----------------------------
 def save_current_session():
     """Save the current chat session"""
@@ -418,7 +418,7 @@ def delete_session(session_id: str):
         st.rerun()
 
 # ----------------------------
-# AI Communication (Previous function remains the same)
+# AI Communication
 # ----------------------------
 def send_message_to_ai(prompt: str, webhook_url: str) -> str:
     """Send message to AI and return response"""
@@ -543,7 +543,8 @@ def render_google_drive_section():
             try:
                 service_account_content = uploaded_file.read().decode()
                 
-                with st.sidebar.spinner("🔄 Authenticating..."):
+                # Use st.spinner() instead of st.sidebar.spinner()
+                with st.spinner("🔄 Authenticating with Google Drive..."):
                     if drive_manager.authenticate_service_account(service_account_content):
                         st.session_state.drive_enabled = True
                         st.sidebar.success("✅ Google Drive connected successfully!")
@@ -654,7 +655,7 @@ def render_chat_stats():
         st.metric("Drive Status", drive_status)
 
 # ----------------------------
-# Main Application (Enhanced with Drive features)
+# Main Application
 # ----------------------------
 def main():
     """Main application function with Google Drive integration"""
