@@ -42,7 +42,13 @@ class GoogleDriveManager:
         try:
             credentials_info = json.loads(credentials_json)
             
-            # Create flow for OAuth2
+            # Check if the credentials have the correct format (web or installed)
+            if "web" not in credentials_info and "installed" not in credentials_info:
+                st.error("❌ Invalid credentials format. Please ensure you download OAuth 2.0 Client credentials (not Service Account)")
+                st.error("The JSON should contain either 'web' or 'installed' configuration")
+                return False
+            
+            # Create flow for OAuth2 - let the library handle web vs installed automatically
             flow = Flow.from_client_config(
                 credentials_info,
                 scopes=SCOPES,
@@ -61,6 +67,13 @@ class GoogleDriveManager:
             
         except json.JSONDecodeError:
             st.error("❌ Invalid JSON format in credentials file")
+            return False
+        except ValueError as e:
+            if "client secrets" in str(e).lower():
+                st.error("❌ Invalid client secrets format. Please use OAuth 2.0 Client ID credentials, not Service Account")
+                st.error("Make sure to select 'Desktop Application' when creating OAuth credentials")
+            else:
+                st.error(f"❌ Configuration error: {str(e)}")
             return False
         except Exception as e:
             st.error(f"❌ Authentication error: {str(e)}")
@@ -571,14 +584,19 @@ def render_google_drive_section():
                 2. Create a new project or select existing
                 3. Enable **Google Drive API**
                 4. Go to **Credentials** → **Create Credentials** → **OAuth 2.0 Client ID**
-                5. Choose any application type
+                5. Choose **Desktop Application** (important!)
                 6. Download the JSON file and upload it here
+                
+                ⚠️ **Important Notes:**
+                - Must use **OAuth 2.0 Client ID** (NOT Service Account)
+                - Choose **Desktop Application** type
+                - The JSON should contain "installed" configuration
                 """)
             
             uploaded_file = st.sidebar.file_uploader(
-                "Choose credentials file",
+                "Choose OAuth 2.0 credentials file",
                 type=['json'],
-                help="Upload the credentials.json file from Google Cloud Console"
+                help="Upload the OAuth 2.0 Client ID credentials (not Service Account)"
             )
             
             if uploaded_file is not None:
