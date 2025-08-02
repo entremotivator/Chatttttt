@@ -54,8 +54,8 @@ st.markdown(f"""
 # Display Chat Messages
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
-        # Use st.text for assistant messages to prevent HTML rendering
         if message["role"] == "assistant":
+            # Display assistant message as plain text (no AI or JSON formatting)
             st.text(message["content"])
         else:
             st.markdown(message["content"])
@@ -89,10 +89,13 @@ if prompt := st.chat_input("Type your message here..."):
                 if response.status_code == 200:
                     try:
                         response_data = response.json()
-                        bot_response = response_data.get("response") or response_data.get("message") or "🧠 I'm processing your request..."
-                    except:
+                        # Only get raw string response, no AI markup or JSON objects
+                        bot_response = response_data.get("response") or response_data.get("message") or "🧠 Processing..."
+                        # Strip any HTML tags if present
+                        bot_response = strip_html_tags(bot_response)
+                    except Exception:
                         # Fallback: treat as raw text and strip HTML
-                        bot_response = strip_html_tags(response.text) or "🧠 I'm processing your request..."
+                        bot_response = strip_html_tags(response.text) or "🧠 Processing..."
                 else:
                     bot_response = "❌ Could not reach the AI service. Please try again later."
 
@@ -101,7 +104,7 @@ if prompt := st.chat_input("Type your message here..."):
     else:
         bot_response = "⚙️ Webhook URL not set. Please enter it in the sidebar."
 
-    # Display Bot Response as plain text
+    # Display Bot Response as plain text only
     st.session_state.messages.append({"role": "assistant", "content": bot_response})
     with st.chat_message("assistant"):
         st.text(bot_response)
